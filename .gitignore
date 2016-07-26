@@ -2,3 +2,7 @@
 elasticsearch_exporter
 *.tar.gz
 *-stamp
+*.iml
+.idea
+build
+.gradle

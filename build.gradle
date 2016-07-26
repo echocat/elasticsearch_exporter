@@ -1,0 +1,15 @@
+plugins {
+  id "org.echocat.golang" version "0.1.1"
+}
+
+group 'github.com/echocat/elasticsearch_exporter'
+
+dependencies {
+  //build 'github.com/prometheus/client_golang/prometheus'
+}
+
+golang {
+  build {
+    //useTemporaryGopath = true
+  }
+}
