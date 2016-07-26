@@ -13,6 +13,8 @@ import (
 	"encoding/json"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"crypto/tls"
+	"crypto/x509"
 )
 
 const (
@@ -129,23 +131,23 @@ var (
 // Exporter collects Elasticsearch stats from the given server and exports
 // them using the prometheus metrics package.
 type Exporter struct {
-	URI   string
-	mutex sync.RWMutex
+	URI         string
+	mutex       sync.RWMutex
 
-	up prometheus.Gauge
+	up          prometheus.Gauge
 
 	gauges      map[string]*prometheus.GaugeVec
 	gaugeVecs   map[string]*prometheus.GaugeVec
 	counters    map[string]*prometheus.CounterVec
 	counterVecs map[string]*prometheus.CounterVec
 
-	allNodes bool
+	allNodes    bool
 
-	client *http.Client
+	client      *http.Client
 }
 
 // NewExporter returns an initialized Exporter.
-func NewExporter(uri string, timeout time.Duration, allNodes bool) *Exporter {
+func NewExporter(uri string, timeout time.Duration, allNodes bool, tlsClientConfig *tls.Config) *Exporter {
 	counters := make(map[string]*prometheus.CounterVec, len(counterMetrics))
 	counterVecs := make(map[string]*prometheus.CounterVec, len(counterVecMetrics))
 	gauges := make(map[string]*prometheus.GaugeVec, len(gaugeMetrics))
@@ -202,6 +204,7 @@ func NewExporter(uri string, timeout time.Duration, allNodes bool) *Exporter {
 
 		client: &http.Client{
 			Transport: &http.Transport{
+				TLSClientConfig: tlsClientConfig,
 				Dial: func(netw, addr string) (net.Conn, error) {
 					c, err := net.DialTimeout(netw, addr, timeout)
 					if err != nil {
@@ -219,7 +222,7 @@ func NewExporter(uri string, timeout time.Duration, allNodes bool) *Exporter {
 
 // Describe describes all the metrics ever exported by the elasticsearch
 // exporter. It implements prometheus.Collector.
-func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
+func (e *Exporter) Describe(ch chan <- *prometheus.Desc) {
 	ch <- e.up.Desc()
 
 	for _, vec := range e.counters {
@@ -242,7 +245,7 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect fetches the stats from configured elasticsearch location and
 // delivers them as Prometheus metrics. It implements prometheus.Collector.
-func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
+func (e *Exporter) Collect(ch chan <- prometheus.Metric) {
 	e.mutex.Lock() // To protect metrics from concurrent collects.
 	defer e.mutex.Unlock()
 
@@ -263,7 +266,9 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 		vec.Reset()
 	}
 
-	defer func() { ch <- e.up }()
+	defer func() {
+		ch <- e.up
+	}()
 
 	resp, err := e.client.Get(e.URI)
 	if err != nil {
@@ -400,10 +405,21 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 func main() {
 	var (
 		listenAddress = flag.String("web.listen-address", ":9108", "Address to listen on for web interface and telemetry.")
-		metricsPath   = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
-		esURI         = flag.String("es.uri", "http://localhost:9200", "HTTP API address of an Elasticsearch node.")
-		esTimeout     = flag.Duration("es.timeout", 5*time.Second, "Timeout for trying to get stats from Elasticsearch.")
-		esAllNodes    = flag.Bool("es.all", false, "Export stats for all nodes in the cluster.")
+		metricsPath = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
+		tlsCert = flag.String("web.tls-cert", "", "Path to PEM file that conains the certificate (and optionally also the private key in PEM format).\n" +
+			"\tThis should include the whole certificate chain.\n" +
+			"\tIf provided: The web socket will be a HTTPS socket.\n" +
+			"\tIf not provided: Only HTTP.")
+		tlsPrivateKey = flag.String("web.tls-private-key", "", "Path to PEM file that conains the private key (if not contained in web.tls-cert file).")
+		tlsClientCa = flag.String("web.tls-client-ca", "", "Path to PEM file that conains the CAs that are trused for client connections.\n" +
+			"\tIf provided: Connecting clients should present a certificate signed by one of this CAs.\n" +
+			"\tIf not provided: Every client will be accepted.")
+		esURI = flag.String("es.uri", "http://localhost:9200", "HTTP API address of an Elasticsearch node.")
+		esTimeout = flag.Duration("es.timeout", 5 * time.Second, "Timeout for trying to get stats from Elasticsearch.")
+		esAllNodes = flag.Bool("es.all", false, "Export stats for all nodes in the cluster.")
+		esCA = flag.String("es.ca", "", "Path to PEM file that conains trusted CAs for the Elasticsearch connection.")
+		esClientPrivateKey = flag.String("es.client-private-key", "", "Path to PEM file that conains the private key to use to connect to Elasticsearch.")
+		esClientCert = flag.String("es.client-cert", "", "Path to PEM file that conains the corresponding cert for the private key to connect to Elasticsearch.")
 	)
 	flag.Parse()
 
@@ -413,19 +429,104 @@ func main() {
 		*esURI = *esURI + "/_nodes/_local/stats"
 	}
 
-	exporter := NewExporter(*esURI, *esTimeout, *esAllNodes)
+	exporter := NewExporter(*esURI, *esTimeout, *esAllNodes, createElasticSearchTlsConfig(*esCA, *esClientCert, *esClientPrivateKey))
 	prometheus.MustRegister(exporter)
 
-	log.Println("Starting Server:", *listenAddress)
-	http.Handle(*metricsPath, prometheus.Handler())
+	log.Fatal(startServer(*metricsPath, *listenAddress, *tlsCert, *tlsPrivateKey, *tlsClientCa))
+}
+
+func loadCertificatesFrom(pemFile string) (*x509.CertPool, error) {
+	caCert, err := ioutil.ReadFile(pemFile)
+	if err != nil {
+		return nil, err
+	}
+	certificates := x509.NewCertPool()
+	certificates.AppendCertsFromPEM(caCert)
+	return certificates, nil
+}
+
+func loadPrivateKeyFrom(pemCertFile, pemPrivateKeyFile string) (*tls.Certificate, error) {
+	privateKey, err := tls.LoadX509KeyPair(pemCertFile, pemPrivateKeyFile)
+	if err != nil {
+		return nil, err
+	}
+	return &privateKey, nil
+}
+
+type bufferedLogWriter struct {
+	buf []byte
+}
+
+func (w *bufferedLogWriter) Write(p []byte) (n int, err error) {
+	return len(p), nil
+}
+
+func createHttpServerLogWrapper() *log.Logger {
+	return log.New(&bufferedLogWriter{}, "", 0)
+}
+
+func createElasticSearchTlsConfig(pemFile, pemCertFile, pemPrivateKeyFile string) (*tls.Config) {
+	if (len(pemFile) > 0) {
+		rootCerts, err := loadCertificatesFrom(pemFile)
+		if err != nil {
+			log.Fatalf("Couldn't load root certificate from %s. Got %s.", pemFile, err)
+		}
+		if (len(pemCertFile) > 0 && len(pemPrivateKeyFile) > 0) {
+			clientPrivateKey, err := loadPrivateKeyFrom(pemCertFile, pemPrivateKeyFile)
+			if err != nil {
+				log.Fatalf("Couldn't setup client authentication. Got %s.", err)
+			}
+			return &tls.Config{
+				RootCAs: rootCerts,
+				Certificates: []tls.Certificate{*clientPrivateKey},
+			}
+		} else {
+			return &tls.Config{
+				RootCAs: rootCerts,
+			}
+		}
+	} else {
+		return nil;
+	}
+}
+
+func startServer(metricsPath, listenAddress, tlsCert, tlsPrivateKey, tlsClientCa string) (error) {
+	server := &http.Server{
+		Addr: listenAddress,
+		ErrorLog: createHttpServerLogWrapper(),
+	}
+	log.Println("Starting Server:", listenAddress)
+	http.Handle(metricsPath, prometheus.Handler())
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<html>
              <head><title>Elasticsearch Exporter</title></head>
              <body>
              <h1>Elasticsearch Exporter</h1>
-             <p><a href='` + *metricsPath + `'>Metrics</a></p>
+             <p><a href='` + metricsPath + `'>Metrics</a></p>
              </body>
              </html>`))
 	})
-	log.Fatal(http.ListenAndServe(*listenAddress, nil))
+	if (len(tlsCert) > 0) {
+		clientValidation := "no"
+		if (len(tlsClientCa) > 0 && len(tlsCert) > 0) {
+			certificates, err := loadCertificatesFrom(tlsClientCa);
+			if err != nil {
+				log.Fatalf("Couldn't load client CAs from %s. Got: %s", tlsClientCa, err)
+			}
+			server.TLSConfig = &tls.Config{
+				ClientCAs: certificates,
+				ClientAuth: tls.RequireAndVerifyClientCert,
+			}
+			clientValidation = "yes"
+		}
+		targetTlsPrivateKey := tlsPrivateKey
+		if (len(targetTlsPrivateKey) <= 0) {
+			targetTlsPrivateKey = tlsCert;
+		}
+		log.Printf("Listening on %s (scheme=HTTPS, secured=TLS, clientValidation=%s)", listenAddress, clientValidation)
+		return server.ListenAndServeTLS(tlsCert, targetTlsPrivateKey);
+	} else {
+		log.Printf("Listening on %s (scheme=HTTP, secured=no, clientValidation=no)", server.Addr)
+		return server.ListenAndServe()
+	}
 }
