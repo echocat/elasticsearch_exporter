@@ -410,7 +410,7 @@ func main() {
 			"\tThis should include the whole certificate chain.\n" +
 			"\tIf provided: The web socket will be a HTTPS socket.\n" +
 			"\tIf not provided: Only HTTP.")
-		tlsPrivateKey = flag.String("web.tls-private-key", "", "Path to PEM file that conains the private key (if not contained in web.tls-cert file).")
+		tlsPrivateKey = flag.String("web.tls-private-key", "", "Path to PEM file that contains the private key (if not contained in web.tls-cert file).")
 		tlsClientCa = flag.String("web.tls-client-ca", "", "Path to PEM file that conains the CAs that are trused for client connections.\n" +
 			"\tIf provided: Connecting clients should present a certificate signed by one of this CAs.\n" +
 			"\tIf not provided: Every client will be accepted.")
@@ -418,7 +418,7 @@ func main() {
 		esTimeout = flag.Duration("es.timeout", 5 * time.Second, "Timeout for trying to get stats from Elasticsearch.")
 		esAllNodes = flag.Bool("es.all", false, "Export stats for all nodes in the cluster.")
 		esCA = flag.String("es.ca", "", "Path to PEM file that conains trusted CAs for the Elasticsearch connection.")
-		esClientPrivateKey = flag.String("es.client-private-key", "", "Path to PEM file that conains the private key to use to connect to Elasticsearch.")
+		esClientPrivateKey = flag.String("es.client-private-key", "", "Path to PEM file that conains the private key for client auth when connecting to Elasticsearch.")
 		esClientCert = flag.String("es.client-cert", "", "Path to PEM file that conains the corresponding cert for the private key to connect to Elasticsearch.")
 	)
 	flag.Parse()

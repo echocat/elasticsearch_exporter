@@ -21,8 +21,19 @@ make
 * __`es.all`:__ If true, query stats for all nodes in the cluster,
     rather than just the node we connect to.
 * __`es.timeout`:__ Timeout for trying to get stats from Elasticsearch. (ex: 20s)
+* __`es.ca`:__ Path to PEM file that conains trusted CAs for the Elasticsearch connection.
+* __`es.client-private-key`:__ Path to PEM file that conains the private key for client auth when connecting to Elasticsearch.
+* __`es.client-cert`:__ Path to PEM file that conains the corresponding cert for the private key to connect to Elasticsearch.
 * __`web.listen-address`:__ Address to listen on for web interface and telemetry.
 * __`web.telemetry-path`:__ Path under which to expose metrics.
+* __`web.tls-cert`:__ Path to PEM file that conains the certificate (and optionally also the private key in PEM format). 
+                      This should include the whole certificate chain. 
+                      If provided: The web socket will be a HTTPS socket.
+                      If not provided: Only HTTP.
+* __`web.tls-private-key`:__ Path to PEM file that contains the private key (if not contained in web.tls-cert file).  
+* __`web.tls-client-ca`:__ Path to PEM file that conains the CAs that are trused for client connections.
+                           If provided: Connecting clients should present a certificate signed by one of this CAs.
+                           If not provided: Every client will be accepted.
 
 __NOTE:__ We support pulling stats for all nodes at once, but in production
 this is unlikely to be the way you actually want to run the system. It is much
