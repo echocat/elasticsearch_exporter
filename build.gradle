@@ -1,15 +1,21 @@
 plugins {
-  id "org.echocat.golang" version "0.1.1"
+  id "org.echocat.golang" version "0.1.2"
 }
 
 group 'github.com/echocat/elasticsearch_exporter'
 
 dependencies {
-  //build 'github.com/prometheus/client_golang/prometheus'
+  build 'github.com/prometheus/client_golang'
+  build 'github.com/beorn7/perks'
+  build 'github.com/golang/protobuf'
+  build 'github.com/prometheus/client_model'
+  build 'github.com/prometheus/common'
+  build 'github.com/prometheus/procfs'
+  build 'github.com/matttproud/golang_protobuf_extensions'
 }
 
 golang {
   build {
-    //useTemporaryGopath = true
+    useTemporaryGopath = true
   }
 }
