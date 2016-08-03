@@ -5,7 +5,7 @@ plugins {
 
 final name = 'elasticsearch_exporter'
 group 'github.com/echocat/elasticsearch_exporter'
-version '0.3.0-echocat'
+version '0.3.0-echocat-1'
 
 dependencies {
     build 'github.com/prometheus/client_golang'
